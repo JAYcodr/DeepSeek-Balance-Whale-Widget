@@ -2,6 +2,14 @@
 
 本仓库的**代码**按 MIT 许可（见 [`LICENSE`](LICENSE)）。`assets/` 目录下的**美术素材**（图片 / 动图 / 音效）**不在 MIT 覆盖范围内**，按下面的说明「原样提供」。
 
+## 零、这个仓库是 fork
+
+本仓库是 [`MeteorNOX/DeepSeek-Balance-Whale-Widget`](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget) 的 fork，包名 `dsh-whale-widget-go`：
+
+- 代码改动见 README 的「和上游的关系」一节；
+- `assets/` 与 `icon.png` **直接沿用上游仓库的原样文件**，许可状态与下表一致，本 fork 不额外授权；
+- 原始版权归 MeteorNOX。
+
 ## 一、许可范围
 
 | 范围 | 许可 |

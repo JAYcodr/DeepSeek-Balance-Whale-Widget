@@ -2224,6 +2224,19 @@ resOpenBtn.addEventListener('click', function (e) { e.stopPropagation(); openRes
 rowRes.appendChild(menuLabel('资源管理'))
 rowRes.appendChild(resOpenBtn)
 menuBox.appendChild(rowRes)
+// —— dsh-whale-widget-go：OpenCode Go 一行。默认模型已经自动种好，这里只负责「换 key / 看状态」 ——
+var rowGo = menuRow()
+var goOpenBtn = document.createElement('button')
+goOpenBtn.type = 'button'
+goOpenBtn.className = 'dshwv-usage-more'
+goOpenBtn.style.flex = '1'
+goOpenBtn.style.margin = '0'
+goOpenBtn.textContent = '设置'
+goOpenBtn.title = '填写 / 更换 OpenCode Go 的 API key（额度会自动读取）'
+goOpenBtn.addEventListener('click', function (e) { e.stopPropagation(); openGoSetup() })
+rowGo.appendChild(menuLabel('OpenCode Go'))
+rowGo.appendChild(goOpenBtn)
+menuBox.appendChild(rowGo)
 // —— 用量记录:底部固定动作行由「用量记录 / ‹ 返回」共用(见下方 nav 行) ——
 
 // ===== 用量记录(主菜单内的子界面,不跳新页面)+ “更多消费记录”窗口 =====
@@ -4737,6 +4750,8 @@ function apiModelsFetch(tries) {
         if (!wasLoaded) {
           try { if (usagePanelOpen && usageSet !== null) rebuildUsageSubShell() } catch (err) {}
           try { renderBubblePal() } catch (err) {}
+          // dsh-whale-widget-go：模型列表第一次拿到后，若 OpenCode Go 还没 key → 自动弹极简设置卡
+          try { goSetupMaybe() } catch (err) {}
         }
         apiModelsFlushWaiters()
         return
@@ -4770,6 +4785,147 @@ function postApiModels(body, cb) {
       if (cb) cb(d)
     })
     .catch(function () { if (cb) cb(null) })
+}
+// ===== dsh-whale-widget-go：OpenCode Go 极简设置卡 =====
+// 小白只需要做一件事：把 OpenCode Go 的 API key 粘进来。
+// 宿主（lib/index.js 的 ensureGoModel）在全新安装时已经种好 opencode_go 这条模型；
+// 这里负责三件事：① 没配 key 时自动弹卡 ② 存 key（复用既有 set-key 动作）
+// ③ 存完立刻强制刷新额度，并关掉卡片。
+var GO_SETUP_DISMISS_KEY = 'dsh-whale-go.setup.dismissed'
+var goSetupEl = null
+var goSetupAutoShown = false
+function goModelEntry() {
+  var list = apiModels || []
+  for (var i = 0; i < list.length; i++) { if (list[i] && list[i].id === 'opencode_go') return list[i] }
+  return null
+}
+function goSetupDismissed() {
+  try { return window.localStorage.getItem(GO_SETUP_DISMISS_KEY) === '1' } catch (err) { return false }
+}
+function goSetupStatusText(m) {
+  if (!m) return '宿主里还没有 OpenCode Go 模型：重启一次 DSH 再来'
+  if (!m.hasKey) return '还没填 key'
+  var p = m.plan
+  if (p && p.ok) {
+    var t = apiPlanPctWinText('opencode_go', 'all', false)
+    return t ? ('已连接 · 已用 ' + t) : 'key 已配置'
+  }
+  if (p && p.error) return 'key 已配置 · 额度读取失败：' + String(p.error).slice(0, 80)
+  return 'key 已配置'
+}
+function closeGoSetup() {
+  try { if (goSetupEl && goSetupEl.parentNode) goSetupEl.parentNode.removeChild(goSetupEl) } catch (err) {}
+  goSetupEl = null
+}
+function openGoSetup(opts) {
+  try {
+    if (goSetupEl) return
+    var auto = !!(opts && opts.auto)
+    var m = goModelEntry()
+    var mask = document.createElement('div')
+    mask.className = 'dshwv-usage-mask'
+    mask.style.zIndex = '30000'
+    var card = document.createElement('div')
+    card.className = 'dshwv-usage-card'
+    card.style.width = 'min(420px,92vw)'
+    card.style.maxHeight = '86vh'
+    card.style.overflow = 'auto'
+    card.style.padding = '16px 18px'
+    card.style.boxSizing = 'border-box'
+    card.style.textAlign = 'left'
+    var title = document.createElement('div')
+    title.className = 'dshwv-bubtitle'
+    title.textContent = '小鲸鱼 · OpenCode Go'
+    card.appendChild(title)
+    var status = document.createElement('div')
+    status.className = 'dshwv-bubhint'
+    status.style.margin = '6px 0 10px'
+    status.textContent = goSetupStatusText(m)
+    card.appendChild(status)
+    var intro = document.createElement('div')
+    intro.className = 'dshwv-bubhint'
+    intro.style.margin = '0 0 10px'
+    intro.style.lineHeight = '1.6'
+    intro.textContent = '填一次 OpenCode Go 的 API key 就够了：小鲸鱼会自动读 5 小时 / 周 / 月 三个窗口的额度，点一下鲸鱼就能看。'
+    card.appendChild(intro)
+    var input = apiTextInput('', 'sk-...')
+    input.type = 'password'
+    input.style.height = '30px'
+    input.style.margin = '0'
+    card.appendChild(input)
+    var hint = document.createElement('div')
+    hint.className = 'dshwv-bubhint'
+    hint.style.margin = '8px 0 12px'
+    hint.style.lineHeight = '1.5'
+    hint.textContent = '在 opencode.ai 控制台 → Go 套餐里复制这串 key；它存进 DSH 凭据的 OPENCODE_GO_API_KEY，和别的插件共用同一份。'
+    card.appendChild(hint)
+    var btns = document.createElement('div')
+    btns.style.display = 'flex'
+    btns.style.gap = '8px'
+    btns.style.justifyContent = 'flex-end'
+    var cancel = document.createElement('button')
+    cancel.type = 'button'
+    cancel.className = 'dshwv-usage-more'
+    cancel.style.margin = '0'
+    cancel.textContent = auto ? '稍后再说' : '关闭'
+    cancel.addEventListener('click', function (e) {
+      e.stopPropagation()
+      if (auto) { try { window.localStorage.setItem(GO_SETUP_DISMISS_KEY, '1') } catch (err) {} }
+      closeGoSetup()
+    })
+    btns.appendChild(cancel)
+    var save = document.createElement('button')
+    save.type = 'button'
+    save.className = 'dshwv-usage-more'
+    save.style.margin = '0'
+    save.textContent = '保存并读取额度'
+    save.addEventListener('click', function (e) {
+      e.stopPropagation()
+      var v = String(input.value || '').trim()
+      if (!v) { hint.textContent = '先把 key 粘进来（一般以 sk- 开头）。'; return }
+      save.disabled = true
+      save.textContent = '保存中…'
+      postApiModels({ action: 'set-key', keyRef: (m && m.keyRef) || 'OPENCODE_GO_API_KEY', keyValue: v }, function (d) {
+        save.disabled = false
+        save.textContent = '保存并读取额度'
+        if (!d || d.ok === false) {
+          hint.textContent = '保存失败：' + String((d && d.error) || '未知错误') + '，可以重试一次。'
+          return
+        }
+        try { window.localStorage.removeItem(GO_SETUP_DISMISS_KEY) } catch (err) {}
+        try { dshwvToast('✅ OpenCode Go 已保存，额度马上刷新') } catch (err) {}
+        loadApiModels(function () {
+          try {
+            var mm = goModelEntry()
+            status.textContent = goSetupStatusText(mm)
+            input.value = ''
+            if (mm && mm.hasKey) closeGoSetup()
+          } catch (err) {}
+        }, true)
+      })
+    })
+    btns.appendChild(save)
+    card.appendChild(btns)
+    mask.appendChild(card)
+    mask.addEventListener('click', function (e) {
+      if (e.target !== mask) return
+      if (auto) { try { window.localStorage.setItem(GO_SETUP_DISMISS_KEY, '1') } catch (err) {} }
+      closeGoSetup()
+    })
+    dshwBodyAppend(mask)
+    goSetupEl = mask
+    try { input.focus() } catch (err) {}
+  } catch (err) {}
+}
+function goSetupMaybe() {
+  try {
+    if (goSetupEl || goSetupAutoShown) return
+    var m = goModelEntry()
+    if (!m || m.hasKey) return
+    if (goSetupDismissed()) return
+    goSetupAutoShown = true
+    openGoSetup({ auto: true })
+  } catch (err) {}
 }
 // 用「某个模型自己的」提醒/预算打开既有编辑器：打开瞬间它只读一次 usageSet[key]，随后立即还原
 function openModelAlertBudget(modelId, key, after) {
@@ -7959,45 +8115,43 @@ var BUBBLE_KIND_LABEL = { normal: '余额内容', random: '随机语句', custom
 // v209 默认泡泡内容 = 与开发者当前线上生效配置一致(全新安装/恢复默认时即此体验)
 // —— 首次点击:标题文本 + 总余额 + 今日已用 + 峰谷时段
 function bubbleDefaultFirstModules() {
-  // v630:normal/首次 兜底默认 = v615 冻结出厂默认第 1 泡(靛蓝余额卡 5 模块),与「恢复默认」一致;
-  // 以下旧体(macaron 版)仅在常量缺失时作兜底参照,不再作为默认内容
-  try {
-    var d0 = BUBBLE_DEFAULT_ITEMS && BUBBLE_DEFAULT_ITEMS[0]
-    if (d0 && !bubbleIsChoice(d0) && Array.isArray(d0.modules)) return JSON.parse(JSON.stringify(d0.modules))
-  } catch (err) {}
+  // dsh-whale-widget-go：首次点击的出厂默认 = OpenCode Go 订阅额度卡。
+  //   上游（MeteorNOX）默认是 DeepSeek 官方余额卡（余额 / 今日已用 / 峰谷）；这个分支的用户
+  //   用的是 OpenCode Go 订阅 —— 没有「余额」，只有 5h / 周 / 月 三个窗口的已用百分比，
+  //   所以这里直接给额度模块（planWin: 'all' 会把三个窗口拼成一行：5h 1% · 周 37% · 月 28%）。
+  //   峰谷定价是 DeepSeek 官方 API 的东西，默认卡里不出现（编辑器里仍然可选）。
+  //   用户改过泡泡配置的照旧用自己的；「恢复默认」会回到这张卡。
   return [
     {
-      type: "text",
-      text: "DeepSeek 余额",
+      type: 'text',
+      text: 'OpenCode Go 额度',
       size: 8,
       bold: true,
-      rgb: "",
+      rgb: '',
       ul: false,
       italic: false,
-      color: ""
+      color: '',
     },
     {
-      type: "balance",
+      type: 'plan',
+      modelId: 'opencode_go',
       size: 20,
-      rgb: "macaron",
-      color: "#203170",
-      tpl: "{balance_ds}"
+      rgb: 'indigo',
+      color: '',
+      tpl: '{plan}',
+      planWin: 'all',
+      bgRgb: '',
+      bg: '',
+      fontFamily: '',
+      bold: false,
     },
     {
-      type: "today",
+      type: 'plan',
+      modelId: 'opencode_go',
       size: 4,
-      color: "#9fb0d9",
-      tpl: "今日已用 {expense_ds}"
-    },
-    {
-      type: "peak",
-      size: 6,
-      peakColor: "#e0433f",
-      offColor: "#2fa24c",
-      peakRgb: "",
-      offRgb: "bamboo",
-      bold: true,
-      tpl: "{status}"
+      color: '#9fb0d9',
+      tpl: '重置 {plan_reset}',
+      planWin: 'all',
     },
   ]
 }
