@@ -8131,30 +8131,32 @@ var BUBBLE_KIND_LABEL = { normal: '余额内容', random: '随机语句', custom
 // —— 首次点击:标题文本 + 总余额 + 今日已用 + 峰谷时段
 function bubbleDefaultFirstModules() {
   // dsh-whale-widget-go：首次点击的出厂默认 = OpenCode Go 订阅额度卡。
-  //   上游（MeteorNOX）默认是 DeepSeek 官方余额卡（余额 / 今日已用 / 峰谷）；这个分支的用户
-  //   用的是 OpenCode Go 订阅 —— 没有「余额」，只有 5h / 周 / 月 三个窗口的已用百分比，
-  //   所以这里直接给额度模块（planWin: 'all' 会把三个窗口拼成一行：5h 1% · 周 37% · 月 28%）。
+  //   上游默认是 DeepSeek 官方余额卡（余额 / 今日已用 / 峰谷）；这个分支的用户用的是 OpenCode Go
+  //   订阅 —— 没有「余额」，只有 5h / 周 / 月 三个窗口的已用百分比和各自的刷新倒计时。
+  //   ⚠️ 排版约束（泡泡文字区宽 66%、单行最大 560u；字号 = 40 + (size-1)*200/49 单位 u）：
+  //     "5h 5% · 周 39% · 月 29%" 挤成一行在 size 8 时就有 850u，必然折成三行（旧版实测很难看）。
+  //     所以这里改成**一窗口一行**：每行 `{plan} · {plan_reset}`（已用% + 该窗口重制倒计时），
+  //     标题用 size 5，数值行 size 7 —— 实测行宽 480~505u，留了 ~10% 余量，永远不折行。
   //   峰谷定价是 DeepSeek 官方 API 的东西，默认卡里不出现（编辑器里仍然可选）。
-  //   用户改过泡泡配置的照旧用自己的；「恢复默认」会回到这张卡。
   return [
     {
       type: 'text',
       text: 'OpenCode Go 额度',
-      size: 8,
+      size: 5,
       bold: true,
       rgb: '',
       ul: false,
       italic: false,
-      color: '',
+      color: '#9fb0d9',
     },
     {
       type: 'plan',
       modelId: 'opencode_go',
-      size: 20,
+      size: 7,
       rgb: 'indigo',
       color: '',
-      tpl: '{plan}',
-      planWin: 'all',
+      tpl: '{plan} · {plan_reset}',
+      planWin: 'rolling',
       bgRgb: '',
       bg: '',
       fontFamily: '',
@@ -8163,10 +8165,28 @@ function bubbleDefaultFirstModules() {
     {
       type: 'plan',
       modelId: 'opencode_go',
-      size: 4,
-      color: '#9fb0d9',
-      tpl: '重置 {plan_reset}',
-      planWin: 'all',
+      size: 7,
+      rgb: 'indigo',
+      color: '',
+      tpl: '{plan} · {plan_reset}',
+      planWin: 'weekly',
+      bgRgb: '',
+      bg: '',
+      fontFamily: '',
+      bold: false,
+    },
+    {
+      type: 'plan',
+      modelId: 'opencode_go',
+      size: 7,
+      rgb: 'indigo',
+      color: '',
+      tpl: '{plan} · {plan_reset}',
+      planWin: 'monthly',
+      bgRgb: '',
+      bg: '',
+      fontFamily: '',
+      bold: false,
     },
   ]
 }
