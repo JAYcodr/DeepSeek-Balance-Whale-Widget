@@ -1,6 +1,6 @@
 {
   "name": "dsh-whale-widget-go",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH Web 界面右下角的 OpenCode Go 额度小鲸鱼挂件：装好自动读取订阅额度（5 小时 / 周 / 月），点一下鲸鱼就能看；不需要额外配置，也不发探针请求。fork 自 MeteorNOX/DeepSeek-Balance-Whale-Widget。",
   "keywords": [
     "dsh",
