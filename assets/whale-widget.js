@@ -4794,6 +4794,7 @@ function postApiModels(body, cb) {
 var GO_SETUP_DISMISS_KEY = 'dsh-whale-go.setup.dismissed'
 var goSetupEl = null
 var goSetupAutoShown = false
+var goSetupEscHandler = null
 function goModelEntry() {
   var list = apiModels || []
   for (var i = 0; i < list.length; i++) { if (list[i] && list[i].id === 'opencode_go') return list[i] }
@@ -4814,8 +4815,12 @@ function goSetupStatusText(m) {
   return 'key 已配置'
 }
 function closeGoSetup() {
-  try { if (goSetupEl && goSetupEl.parentNode) goSetupEl.parentNode.removeChild(goSetupEl) } catch (err) {}
+  // ⚠️ 必须走 dshwBodyDetach：本文件有一套 DOM 守护，登记过的 body 节点被裸 removeChild 后会
+  //    在下一个变更批次里被「补挂回来」——之前点「关闭」没反应就是这个原因（面板看着关不掉）。
+  try { if (goSetupEl) dshwBodyDetach(goSetupEl) } catch (err) {}
   goSetupEl = null
+  try { if (goSetupEscHandler) document.removeEventListener('keydown', goSetupEscHandler, true) } catch (err) {}
+  goSetupEscHandler = null
 }
 function openGoSetup(opts) {
   try {
@@ -4914,6 +4919,14 @@ function openGoSetup(opts) {
     })
     dshwBodyAppend(mask)
     goSetupEl = mask
+    try {
+      goSetupEscHandler = function (e) {
+        if (!e || e.key !== 'Escape') return
+        try { e.stopPropagation() } catch (err) {}
+        closeGoSetup()
+      }
+      document.addEventListener('keydown', goSetupEscHandler, true)
+    } catch (err) {}
     try { input.focus() } catch (err) {}
   } catch (err) {}
 }
@@ -4922,6 +4935,8 @@ function goSetupMaybe() {
     if (goSetupEl || goSetupAutoShown) return
     var m = goModelEntry()
     if (!m || m.hasKey) return
+    // key 已经能读到额度（plan.ok）时也不弹：用户根本不缺这一步
+    if (m.plan && m.plan.ok) return
     if (goSetupDismissed()) return
     goSetupAutoShown = true
     openGoSetup({ auto: true })
@@ -8984,6 +8999,22 @@ var BUBBLE_DEFAULT_ITEMS = [
                     ]
     }
 ];
+
+// —— dsh-whale-widget-go：出厂默认第 1 泡 = OpenCode Go 额度卡 ——
+// 上游把默认泡泡序列**固化成了上面那份快照**（`bubbleDefaultQueue()` 第一行就
+// `return bubbleParseDefaultItems()`，旧的默认体保留但不可达），所以只改
+// `bubbleDefaultFirstModules()` 不会进首屏。这里在快照定义之后显式覆盖第 1 泡：
+// 首次点击 /「恢复默认序列」都回到 OpenCode Go 三个窗口，不再出现 DeepSeek 官方余额。
+;(function () {
+  try {
+    if (!Array.isArray(BUBBLE_DEFAULT_ITEMS) || !BUBBLE_DEFAULT_ITEMS.length) return
+    var mods = bubbleDefaultFirstModules()
+    var first = BUBBLE_DEFAULT_ITEMS[0]
+    if (first && first.kind === 'custom' && Array.isArray(first.modules) && first.modules.length
+      && first.modules[0] && first.modules[0].text === 'OpenCode Go 额度') return
+    BUBBLE_DEFAULT_ITEMS[0] = { kind: 'custom', modules: mods }
+  } catch (err) {}
+})()
 
 function bubbleParseDefaultItems() {
   try { return JSON.parse(JSON.stringify(BUBBLE_DEFAULT_ITEMS)) } catch (err) { return [] }
