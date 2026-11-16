@@ -27,3 +27,6 @@ node_modules/
 *.bak2
 *.bak-devpaths
 _patch_*.patch
+
+# 本地动效实验台 / 生图源片（设计稿，不进包）
+demo/

@@ -574,6 +574,15 @@ var css = [
   // 代价是 img 的**矩形**（含透明边距）会吞掉点击 → 由 setupHitTest() 用命中图的**凸包**做 clip-path
   // 裁掉透明区（凸包包含全部不透明像素，不会裁到角色本身），"点到透明处穿透到下层"的行为得以保留。
   '.dshwv-img{position:absolute;right:0;bottom:0;width:59.45%;height:59.45%;display:block;pointer-events:auto;-webkit-user-drag:none;user-select:none;object-fit:contain;object-position:right bottom}',
+  // v0.1.2「活物感」：呼吸 + 悬停抬头。
+  //   呼吸走**独立的 scale 属性**（不是 transform）——按压动画写在 `.dshwv-body` 的 transform 上，
+  //   两者分层不互相覆盖；拖动时暂停（拖动本身要看准落点，别晃）。
+  //   prefers-reduced-motion 的用户整段关掉（无障碍，不是可选）。
+  '@keyframes dshwvBreath{0%,100%{scale:1 1}50%{scale:1.012 1.022}}',
+  '.dshwv-root .dshwv-img{animation:dshwvBreath 3.6s ease-in-out infinite;transform-origin:50% 96%;transition:transform .22s cubic-bezier(.34,1.56,.64,1)}',
+  '.dshwv-root.dshwv-dragging .dshwv-img{animation-play-state:paused}',
+  '.dshwv-root.dshwv-hover .dshwv-img{transform:translateY(-1.4%) rotate(-.5deg)}',
+  '@media (prefers-reduced-motion: reduce){.dshwv-root .dshwv-img{animation:none!important;transition:none!important}}',
   // v751（PR #119）：光标不再写 document.body.style.cursor —— cursor 是可继承属性，写 <body> 会让 Blink
   // 失效**整棵文档树**的样式；而它在点击链路上按下/抬手各写一次，紧接着 isWhaleHit() 的
   // getBoundingClientRect() 与泡泡行测量的 getComputedStyle()/scrollWidth 会强制刷新样式+布局，
@@ -1347,6 +1356,12 @@ try {
 img.src = initRoleUrl
 img.alt = 'DeepSeek 余额'
 img.draggable = false
+// v0.1.2：悬停时整只往上抬一指（.dshwv-hover 由扫描到的指针进/出走）。只在角色本体上有反应，
+//   挂在 root 上会被整个 360px 的空白盒触发，显得神经质。
+try {
+  img.addEventListener('mouseenter', function () { try { root.classList.add('dshwv-hover') } catch (err) {} })
+  img.addEventListener('mouseleave', function () { try { root.classList.remove('dshwv-hover') } catch (err) {} })
+} catch (err) {}
 
 var menuBtn = document.createElement('button')
 menuBtn.type = 'button'
@@ -2141,6 +2156,39 @@ roleFileInput.style.display = 'none'
 roleBtn.addEventListener('click', function (e) { e.stopPropagation(); toggleRolePanel() })
 roleImportBtn.addEventListener('click', function (e) { e.stopPropagation(); roleFileInput.click() })
 roleFileInput.addEventListener('change', function () { onRoleFileChosen(roleFileInput) })
+
+// v0.1.2：「图就在手边」的两条入口 —— 用生图做形象之后最常走的路。
+//   ① 拖到小鲸鱼身上（只认角色本体，不吞整页拖拽）；
+//   ② ⌘/Ctrl+V 粘贴截图或刚生成的图（页面上没有输入框焦点时才接管，绝不抢聊天框的正常粘贴）。
+//   两条都复用 importRoleFile：GIF/APNG 走动图窗口、静态图走裁剪，与「导入」按钮完全一致。
+try {
+  img.addEventListener('dragover', function (e) {
+    try { e.preventDefault(); e.stopPropagation(); root.classList.add('dshwv-hover') } catch (err) {}
+  })
+  img.addEventListener('dragleave', function () { try { root.classList.remove('dshwv-hover') } catch (err) {} })
+  img.addEventListener('drop', function (e) {
+    try {
+      e.preventDefault(); e.stopPropagation()
+      root.classList.remove('dshwv-hover')
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]
+      if (f) importRoleFile(f)
+    } catch (err) {}
+  })
+  document.addEventListener('paste', function (e) {
+    try {
+      var t = e.target
+      var tag = t && t.tagName ? String(t.tagName).toLowerCase() : ''
+      if (tag === 'input' || tag === 'textarea' || (t && t.isContentEditable)) return
+      var items = (e.clipboardData && e.clipboardData.items) || []
+      for (var i = 0; i < items.length; i++) {
+        if (items[i] && items[i].kind === 'file' && /^image\//.test(items[i].type || '')) {
+          var f = items[i].getAsFile()
+          if (f) { e.preventDefault(); importRoleFile(f); return }
+        }
+      }
+    } catch (err) {}
+  })
+} catch (err) {}
 menuBox.appendChild(rowRole)
 menuBox.appendChild(row1)
 menuBox.appendChild(row2)
@@ -4804,7 +4852,9 @@ function goSetupDismissed() {
   try { return window.localStorage.getItem(GO_SETUP_DISMISS_KEY) === '1' } catch (err) { return false }
 }
 function goSetupStatusText(m) {
-  if (!m) return '宿主里还没有 OpenCode Go 模型：重启一次 DSH 再来'
+  // v0.1.2：旧文案说「重启一次再来」，但 ensureGoModel 只在全新安装时种一次，
+  //   已经有别的模型的用户重启一万次也不会出现这条 —— 保存时会自动建，直接说清。
+  if (!m) return '还没有这条额度模型：保存时会自动添加'
   if (!m.hasKey) return '还没填 key'
   var p = m.plan
   if (p && p.ok) {
@@ -4890,23 +4940,39 @@ function openGoSetup(opts) {
       if (!v) { hint.textContent = '先把 key 粘进来（一般以 sk- 开头）。'; return }
       save.disabled = true
       save.textContent = '保存中…'
-      postApiModels({ action: 'set-key', keyRef: (m && m.keyRef) || 'OPENCODE_GO_API_KEY', keyValue: v }, function (d) {
-        save.disabled = false
-        save.textContent = '保存并读取额度'
-        if (!d || d.ok === false) {
-          hint.textContent = '保存失败：' + String((d && d.error) || '未知错误') + '，可以重试一次。'
+      // v0.1.2：模型不存在时（用户删过 / 老用户从没被种入）先把模型建回来再写 key。
+      //   旧实现只写 key：界面显示「保存成功」，但额度和泡泡永远出不来，重启也修不好。
+      var ready = m ? Promise.resolve(true) : new Promise(function (resolve) {
+        postApiModels({
+          action: 'save',
+          model: { id: 'opencode_go', provider: 'opencode_go', name: 'OpenCode Go（订阅）', currency: 'USD', keyRef: 'OPENCODE_GO_API_KEY' },
+        }, function (d) { resolve(!!(d && d.ok)) })
+      })
+      ready.then(function (created) {
+        if (!created) {
+          save.disabled = false
+          save.textContent = '保存并读取额度'
+          hint.textContent = '添加 OpenCode Go 额度模型失败，可以重试一次。'
           return
         }
-        try { window.localStorage.removeItem(GO_SETUP_DISMISS_KEY) } catch (err) {}
-        try { dshwvToast('✅ OpenCode Go 已保存，额度马上刷新') } catch (err) {}
-        loadApiModels(function () {
-          try {
-            var mm = goModelEntry()
-            status.textContent = goSetupStatusText(mm)
-            input.value = ''
-            if (mm && mm.hasKey) closeGoSetup()
-          } catch (err) {}
-        }, true)
+        postApiModels({ action: 'set-key', keyRef: 'OPENCODE_GO_API_KEY', keyValue: v }, function (d) {
+          save.disabled = false
+          save.textContent = '保存并读取额度'
+          if (!d || d.ok === false) {
+            hint.textContent = '保存失败：' + String((d && d.error) || '未知错误') + '，可以重试一次。'
+            return
+          }
+          try { window.localStorage.removeItem(GO_SETUP_DISMISS_KEY) } catch (err) {}
+          try { dshwvToast('✅ OpenCode Go 已保存，额度马上刷新') } catch (err) {}
+          loadApiModels(function () {
+            try {
+              var mm = goModelEntry()
+              status.textContent = goSetupStatusText(mm)
+              input.value = ''
+              if (mm && mm.hasKey) closeGoSetup()
+            } catch (err) {}
+          }, true)
+        })
       })
     })
     btns.appendChild(save)
@@ -4922,12 +4988,15 @@ function openGoSetup(opts) {
     try {
       goSetupEscHandler = function (e) {
         if (!e || e.key !== 'Escape') return
-        try { e.stopPropagation() } catch (err) {}
+        // v0.1.2：只关自己的卡，**不 stopPropagation** —— 捕获阶段拦下 Escape 会把宿主
+        //   自己的「按 Esc 关面板」一起吃掉，用户会以为键盘失灵。
         closeGoSetup()
       }
       document.addEventListener('keydown', goSetupEscHandler, true)
     } catch (err) {}
-    try { input.focus() } catch (err) {}
+    // v0.1.2：自动弹出的卡**不许抢焦点**。它是在模型列表首次回来时弹的，用户很可能正在
+    //   输入框里打字 —— focus() 会把光标拽进这个密码框，敲的字被遮成圆点，很难发现。
+    if (!auto) { try { input.focus() } catch (err) {} }
   } catch (err) {}
 }
 function goSetupMaybe() {
@@ -9020,24 +9089,34 @@ var BUBBLE_DEFAULT_ITEMS = [
     }
 ];
 
-// —— dsh-whale-widget-go：出厂默认第 1 泡 = OpenCode Go 额度卡 ——
-// 上游把默认泡泡序列**固化成了上面那份快照**（`bubbleDefaultQueue()` 第一行就
-// `return bubbleParseDefaultItems()`，旧的默认体保留但不可达），所以只改
-// `bubbleDefaultFirstModules()` 不会进首屏。这里在快照定义之后显式覆盖第 1 泡：
-// 首次点击 /「恢复默认序列」都回到 OpenCode Go 三个窗口，不再出现 DeepSeek 官方余额。
-;(function () {
-  try {
-    if (!Array.isArray(BUBBLE_DEFAULT_ITEMS) || !BUBBLE_DEFAULT_ITEMS.length) return
-    var mods = bubbleDefaultFirstModules()
-    var first = BUBBLE_DEFAULT_ITEMS[0]
-    if (first && first.kind === 'custom' && Array.isArray(first.modules) && first.modules.length
-      && first.modules[0] && first.modules[0].text === 'OpenCode Go 额度') return
-    BUBBLE_DEFAULT_ITEMS[0] = { kind: 'custom', modules: mods }
-  } catch (err) {}
-})()
-
+// —— dsh-whale-widget-go：出厂默认第 1 泡 = OpenCode Go 额度卡（**按当前装没装这条模型动态决定**）——
+// 上游把默认泡泡序列固化成了上面那份快照（`bubbleDefaultQueue()` 第一行就 `return bubbleParseDefaultItems()`），
+// 所以只改 `bubbleDefaultFirstModules()` 不会进首屏 —— 必须在解析时替换快照第 1 泡。
+//
+// v0.1.2 修的坑：旧实现在**脚本加载时**就把 Go 卡烧进快照，而那一刻模型列表还没拉回来。
+//   于是「注册表里已经有别的模型、宿主不会种入 Go」的老用户，只要点一次「恢复默认序列」，
+//   首泡就变成三行 `-- · --`（plan 模块找不到模型），而且没有任何提示。
+//   现在改成**解析时**判断：模型在 → 三窗口卡；模型不在 → 一张引导卡（告诉你去哪加）。
+function bubbleFirstStepModules() {
+  var hasModel = false
+  try { hasModel = !!(typeof apiModelById === 'function' && apiModelById('opencode_go')) } catch (err) {}
+  // 模型列表还没回来：先按 Go 卡给（数据到了额度模块自己会填），别先闪一张「还没连」的引导卡
+  if (!apiModelsLoaded || hasModel) return bubbleDefaultFirstModules()
+  return [
+    { type: 'text', text: '小鲸鱼还没连额度', size: 6, bold: true, rgb: '', ul: false, italic: false, color: '#9fb0d9' },
+    { type: 'text', text: '右键我 → OpenCode Go → 设置', size: 3, bold: false, rgb: '', ul: false, italic: false, color: '#7f90bd' },
+  ]
+}
 function bubbleParseDefaultItems() {
-  try { return JSON.parse(JSON.stringify(BUBBLE_DEFAULT_ITEMS)) } catch (err) { return [] }
+  try {
+    var items = JSON.parse(JSON.stringify(BUBBLE_DEFAULT_ITEMS))
+    try {
+      if (items && items.length && items[0] && items[0].kind === 'custom') {
+        items[0] = { kind: 'custom', modules: bubbleFirstStepModules() }
+      }
+    } catch (err) {}
+    return items
+  } catch (err) { return [] }
 }
 
 // —— 默认队列 = 首次点击 + 第2次点击(全新安装无配置时的体验)
@@ -20511,8 +20590,15 @@ function onRoleFileChosen(input) {
   try {
     var f = input && input.files && input.files[0]
     input.value = ''
-    if (!f) return
-    if (!/^image\//.test(f.type)) return
+    if (f) importRoleFile(f)
+  } catch (err) {}
+}
+// v0.1.2：把「一个 File」变成角色。抽出这一层，是为了让三条入口共用同一套判定
+//   （系统文件框 / 拖到小鲸鱼身上 / 直接粘贴截图或生成的图）——
+//   GIF/APNG 走动图窗口、静态图走裁剪，任何一条入口都不该有不一样的行为。
+function importRoleFile(f) {
+  try {
+    if (!f || !/^image\//.test(f.type || '')) return
     var reader = new FileReader()
     reader.onload = function () {
       try {
