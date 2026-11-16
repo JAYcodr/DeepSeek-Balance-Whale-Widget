@@ -19,6 +19,7 @@
     "icon.png",
     "cordis.patch.yml",
     "README.md",
+    "docs",
     "PROVENANCE.md"
   ],
   "repository": {
